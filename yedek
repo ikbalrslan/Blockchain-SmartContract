@@ -1,0 +1,49 @@
+pragma solidity ^0.4.18;
+
+contract SharedTaxiBusiness{
+    
+    struct ParticipantBalance{
+        address addr;
+        uint balance;
+    }
+    
+    modifier onlyOwner(){
+        require(addr == msg.sender);
+        _;
+    }
+    
+    
+    //without iteration on array, mapping helps for matching participant adresses with their balances
+    mapping(address => ParticipantBalance) participants;
+    
+    uint maxParticipantCount;
+    uint public numberOfParticipant;
+    uint public participationFee; //fixed 100 ether
+    address addr;
+    
+    function SharedTaxiBusiness(uint _maxParticipantCount) public {
+        participationFee = 100 ether;
+        if(_maxParticipantCount !=0 ){
+            maxParticipantCount = _maxParticipantCount;
+            
+        }else{
+            maxParticipantCount = 100; 
+        }
+    }
+    
+    //payable keyword for money depositable account
+    function Join() payable public {
+        require(numberOfParticipant < maxParticipantCount);
+        participants[msg.sender] = ParticipantBalance(msg.sender, msg.value);
+        require(participants[msg.sender].balance >= participationFee); //check fee
+        //msg.sender.transfer(participationFee);
+        participants[msg.sender].balance -= participationFee;
+        numberOfParticipant++;
+    }
+    
+    //bu fonksiyon problemli
+    function getParticipantBalance() public constant returns (uint) {
+        ParticipantBalance storage currentParticipant = participants[msg.sender];
+        return currentParticipant.balance;
+    }
+}
