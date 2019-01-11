@@ -35,7 +35,7 @@ contract SharedTaxiBusiness{
     modifier canJoin(){
         require(!isParticipantExist(msg.sender)); //if participation doesn't exist already
         require(numberOfParticipant < maxParticipantCount);
-        require(msg.sender.balance > participationFee);
+        require(msg.value == participationFee);
         _;
     }
     
@@ -67,12 +67,13 @@ contract SharedTaxiBusiness{
     }
     
     struct ProposedCar{
-        uint32 carID;
+        uint carID;
         uint price;
         uint offerValidTime;
     }
     
-    ProposedCar[] public cars;
+    mapping(uint => ProposedCar) public cars;
+    ProposedCar public car1;
     
     struct ProposedPurchase{
         uint32 carID;
@@ -93,9 +94,9 @@ contract SharedTaxiBusiness{
     
     //payable keyword for money depositable account
     function Join() notOwner canJoin payable public {
-        balances[msg.sender] -= participationFee;
+        //balances[msg.sender] -= participationFee;
         balances[contractOwner] += participationFee; //keep all contract money here
-        contractBalance += participationFee;//keep all contract money here
+        //contractBalance += participationFee;//keep all contract money here
         participants[msg.sender] = ParticipantBalance(msg.sender, msg.value);
         numberOfParticipant++;
     }
@@ -109,15 +110,17 @@ contract SharedTaxiBusiness{
     }
      
     function CarPropose(uint32 _carID,uint _price, uint _offerValidTime) onlyCarDealer public{
-        cars.push(ProposedCar(_carID,_price,_offerValidTime));
+        cars[_carID] = ProposedCar(_carID,_price,_offerValidTime);
+        car1.carID = _carID;
+        car1.price = _price;
+        car1.offerValidTime = _offerValidTime;
+        
     }
     
-    /*
-    function getCarInfo(uint idx) onlyOwner public constant returns (string, address) {
-        ProposedCar storage currentCar = cars[idx];
-        return (currentCar._carID, currentCar._price, currentCar._offerValidTime);
+    function getCarInfo(uint _carID) onlyCarDealer public constant returns (uint, uint, uint) {
+        return (cars[_carID].carID, cars[_carID].price, cars[_carID].offerValidTime);
     }
-    */
+    
     
     /*
     function PurchaseCar() onlyManager public{}
