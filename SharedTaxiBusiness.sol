@@ -1,4 +1,4 @@
-pragma solidity ^0.4.20;
+pragma solidity >=0.4.22 <0.6.0;
 
 contract SharedTaxiBusiness{
     
@@ -9,6 +9,21 @@ contract SharedTaxiBusiness{
     
     modifier notOwner(){
         require(contractOwner != msg.sender);
+        _;
+    }
+    
+    modifier notCarDealer(){
+        require(carDealer != msg.sender);
+        _;
+    }
+    
+    modifier notManager(){
+        require(manager != msg.sender);
+        _;
+    }
+    
+    modifier notTaxiDriver(){
+        require(taxiDriver != msg.sender);
         _;
     }
     
@@ -38,28 +53,57 @@ contract SharedTaxiBusiness{
         require(msg.value == participationFee);
         _;
     }
+    modifier canVote(){
+        require(participants[msg.sender].vote != true);
+        _;
+    }
+    
+    modifier canPurchase(){
+        require(now - carProposed.proposeTime <= carProposed.offerValidTime);
+        require(contractBalance >= carProposed.price);
+        _;
+    }
+    
+    modifier canSell(){
+        require(now - carPurchasedProposed.proposeTime <= carPurchasedProposed.offerValidTime);
+        require(msg.value >= carPurchasedProposed.price);
+        _;
+    }
+    
+    modifier hasBalance(){
+        require(balances[msg.sender] > 0);
+        _;
+    }
     
     
     
     
     //without iteration on array, mapping helps for matching participant adresses with their balances
     mapping(address => ParticipantBalance) participants;
+    ParticipantBalance[] public participantArray; //for reverting the votes of participants to false;
     mapping(address => uint) private balances;
+    //mapping(address => bool) private participantVotes;
+    
     
     uint maxParticipantCount;
     uint public numberOfParticipant;
     uint public contractBalance;
     uint public participationFee; //fixed 100 ether
+    uint public monthlyDriverPay; //fixed 2 ether
+    uint public _fixedExpenses; // fixed per 6 months
+    uint public totalExpenses; //all expenses
     
-    address contractOwner;
-    address manager;
-    address taxiDriver;
-    address carDealer;
-    uint public _fixedExpenses;
+    
+    address public contractOwner;
+    address public manager;
+    address payable public taxiDriver;
+    address payable public carDealer;
+    
     
     struct ParticipantBalance{
         address addr;
         uint balance;
+        bool vote; //for voting the car
     }
     
     struct OwnedCar{
@@ -70,34 +114,45 @@ contract SharedTaxiBusiness{
         uint carID;
         uint price;
         uint offerValidTime;
+        uint proposeTime;
     }
     
-    mapping(uint => ProposedCar) public cars;
-    ProposedCar public car1;
+    //mapping(uint => ProposedCar) public proposedCars;
+    ProposedCar public carProposed;
     
     struct ProposedPurchase{
-        uint32 carID;
+        uint carID;
         uint price;
         uint offerValidTime;
         uint approvalState;
+        uint proposeTime;
     }
     
-    uint timeHadle;
+    //mapping(uint => ProposedPurchase) public purchasedCars;
+    ProposedPurchase public carPurchasedProposed;
+    
+    uint public driverPaidTime;
+    uint public dealerExpenseTime;
+    uint public payDividendTime;
     
     
     
-    function SharedTaxiBusiness() public {
+    
+    constructor() public {
         contractOwner = msg.sender;
         maxParticipantCount = 5; //fixed 100 participant
         participationFee = 50 ether; //fixed 100 ether
+        monthlyDriverPay = 2 ether;
+        _fixedExpenses = 10 ether;
     }
     
     //payable keyword for money depositable account
-    function Join() notOwner canJoin payable public {
-        //balances[msg.sender] -= participationFee;
+    function Join() notOwner notCarDealer notManager notTaxiDriver canJoin payable public {
         balances[contractOwner] += participationFee; //keep all contract money here
-        //contractBalance += participationFee;//keep all contract money here
-        participants[msg.sender] = ParticipantBalance(msg.sender, msg.value);
+        contractBalance += participationFee;//keep all contract money here
+        participants[msg.sender] = ParticipantBalance(msg.sender, msg.value, false);
+        //array keeps the participants for extra conditions
+        participantArray.push(ParticipantBalance(msg.sender, msg.value, false));
         numberOfParticipant++;
     }
     
@@ -105,67 +160,118 @@ contract SharedTaxiBusiness{
         manager = _manager;
     }
     
-    function SetCarDealer(address _carDealer) onlyManager public{ //set CarDealer to a specific adress
+    function SetCarDealer(address payable _carDealer) onlyManager public{ //set CarDealer to a specific adress
         carDealer = _carDealer;
     }
      
-    function CarPropose(uint32 _carID,uint _price, uint _offerValidTime) onlyCarDealer public{
-        cars[_carID] = ProposedCar(_carID,_price,_offerValidTime);
-        car1.carID = _carID;
-        car1.price = _price;
-        car1.offerValidTime = _offerValidTime;
+    function CarPropose(uint _carID,uint _price, uint _offerValidTime) onlyCarDealer public{
+        //proposedCars[_carID] = ProposedCar(_carID,_price,_offerValidTime);
+        carProposed.carID = _carID;
+        carProposed.price = _price * 1 ether;
+        carProposed.offerValidTime = _offerValidTime * 1 days;
+        carProposed.proposeTime = now;
         
     }
     
-    function getCarInfo(uint _carID) onlyCarDealer public constant returns (uint, uint, uint) {
-        return (cars[_carID].carID, cars[_carID].price, cars[_carID].offerValidTime);
+    function getCarInfo() onlyCarDealer public view returns (uint, uint, uint) {
+        //return (proposedCars[_carID].carID, proposedCars[_carID].price, proposedCars[_carID].offerValidTime);
+        return(carProposed.carID, carProposed.price, carProposed.offerValidTime);
+    }
+    
+    function PurchaseCar() onlyManager canPurchase public{
+        contractBalance -= carProposed.price;
+        //balances[carDealer] += carProposed.price; //tranfer fonksiyonuna bak
+        carDealer.transfer(carProposed.price);
     }
     
     
-    /*
-    function PurchaseCar() onlyManager public{}
+    function PurchasePropose(uint _price, uint _offerValidTime) onlyCarDealer public{
+        //purchasedCars[carProposed.carID] = ProposedPurchase(carProposed.carID,_price,_offerValidTime, 0);
+        carPurchasedProposed.carID = carProposed.carID;
+        carPurchasedProposed.price = _price * 1 ether;
+        carPurchasedProposed.offerValidTime = _offerValidTime * 1 days;
+        carPurchasedProposed.approvalState = 0;
+        carPurchasedProposed.proposeTime = now;
+    }
     
-    function PurchasePropose() onlyCarDealer public{}
+    function SetDriver(address payable _taxiDriver) onlyManager public{
+        taxiDriver = _taxiDriver;
+    }
     
-    function ApproveSellProposal() onlyParticipant public{}
+    function ApproveSellProposal() onlyParticipant canVote public{
+        participants[msg.sender].vote = true;
+        carPurchasedProposed.approvalState += 1;
+    }
     
-    function SellCar() onlyCarDealer public{}
+    /*buraya vote sayısına göre karar eklenecek*/
+    function SellCar() onlyCarDealer canSell payable public{
+        require(carPurchasedProposed.approvalState > (numberOfParticipant / 2), "total votes must be greater than the half of the community");
+        contractBalance += carPurchasedProposed.price;
+        for (uint i=0; i<numberOfParticipant; i++) {
+            participants[participantArray[i].addr].vote = false;
+        }
+        
+    }
     
-    function SetDriver() onlyManager public{}
+    function GetCharge() payable public{
+        contractBalance += msg.value;
+    }
+        
+    function PaySalary() onlyManager public{
+        if(driverPaidTime != 0){
+            require(now - 30 days >= driverPaidTime , "driverPaidTime must take 30 days period.");
+        }
+        driverPaidTime = now;
+        contractBalance -= monthlyDriverPay;
+        balances[taxiDriver] += monthlyDriverPay;
+    }
     
-    function GetCharge() public{}
+    function GetSalary() onlyDriver hasBalance() public{
+        taxiDriver.transfer(balances[taxiDriver]);
+        balances[taxiDriver] = 0;
+    }
     
-    function PaySalary() onlyManager{}
+    function CarExpenses() onlyManager public{
+        if(dealerExpenseTime != 0){
+            require(now - 30 * 6 days >= dealerExpenseTime , "expenses must be sended 6 months period.");
+        }
+        dealerExpenseTime = now;
+        contractBalance -= _fixedExpenses;
+        carDealer.transfer(_fixedExpenses);
+    }
     
-    function GetSalary() onlyDriver{}
-    
-    function CarExpenses() onlyManager{}
-    
-    function PayDividend() onlyManager{}
-    */
+    function PayDividend() onlyManager public{
+        if(payDividendTime != 0){
+            require(now - 30 * 6 days >= payDividendTime , "pay dividend must be sended 6 months period.");
+        }
+        payDividendTime = now;
+        totalExpenses = monthlyDriverPay + _fixedExpenses;
+        uint contractBalanceTemp = contractBalance-totalExpenses; //all expenses
+        if(contractBalanceTemp > 0){
+            for (uint i=0; i<numberOfParticipant; i++) {
+                balances[participantArray[i].addr] += (contractBalanceTemp / numberOfParticipant);
+            }
+        }
+        
+    }
     
     //Only participant can call this function and can see his/her balance
-    function GetDividend() onlyParticipant public constant returns (uint) {
-        //require(balances[msg.sender] != 0);
-        //msg.sender.transfer(balances[msg.sender]);
-        //return msg.value;
-        return msg.sender.balance;
+    function GetDividend() onlyParticipant hasBalance() public{
+        msg.sender.transfer(balances[msg.sender]);
+        balances[msg.sender] = 0;
     }
     
-    function isParticipantExist(address accountOwner) private constant returns (bool){
+    function isParticipantExist(address accountOwner) private view returns (bool){
         return participants[accountOwner].addr != address(0);
     }
     
     //for looking the balance of specific account
-    function getBalance() public constant returns(int){ //int is used for negative participant balance
+    function getBalance() public view returns(int){ //int is used for negative participant balance
         return int(balances[msg.sender]);
     }
     
-    
-    /*
     //Fallback function
-    function(){
-        throw;
+    function() external{
+        revert();
     }
-    */
 }
