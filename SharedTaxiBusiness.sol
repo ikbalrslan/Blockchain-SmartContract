@@ -66,7 +66,8 @@ contract SharedTaxiBusiness{
     
     modifier canSell(){
         require(now - carPurchasedProposed.proposeTime <= carPurchasedProposed.offerValidTime);
-        require(msg.value >= carPurchasedProposed.price);
+        require(msg.value == carPurchasedProposed.price);
+        require(carPurchasedProposed.approvalState > (numberOfParticipant / 2), "total votes must be greater than the half of the community");
         _;
     }
     
@@ -140,10 +141,13 @@ contract SharedTaxiBusiness{
     
     constructor() public {
         contractOwner = msg.sender;
-        maxParticipantCount = 5; //fixed 100 participant
-        participationFee = 50 ether; //fixed 100 ether
+        maxParticipantCount = 100; //fixed 100 participant
+        participationFee = 100 ether; //fixed 100 ether
         monthlyDriverPay = 2 ether;
         _fixedExpenses = 10 ether;
+        driverPaidTime = 0;
+        dealerExpenseTime = 0;
+        payDividendTime = 0;
     }
     
     //payable keyword for money depositable account
@@ -173,9 +177,9 @@ contract SharedTaxiBusiness{
         
     }
     
-    function getCarInfo() onlyCarDealer public view returns (uint, uint, uint) {
+    function getCarInfo() onlyCarDealer public view returns (uint, uint, uint, uint) {
         //return (proposedCars[_carID].carID, proposedCars[_carID].price, proposedCars[_carID].offerValidTime);
-        return(carProposed.carID, carProposed.price, carProposed.offerValidTime);
+        return(carProposed.carID, carProposed.price, carProposed.offerValidTime, carProposed.proposeTime);
     }
     
     function PurchaseCar() onlyManager canPurchase public{
@@ -205,11 +209,11 @@ contract SharedTaxiBusiness{
     
     /*buraya vote sayısına göre karar eklenecek*/
     function SellCar() onlyCarDealer canSell payable public{
-        require(carPurchasedProposed.approvalState > (numberOfParticipant / 2), "total votes must be greater than the half of the community");
         contractBalance += carPurchasedProposed.price;
         for (uint i=0; i<numberOfParticipant; i++) {
             participants[participantArray[i].addr].vote = false;
         }
+        
         
     }
     
@@ -246,13 +250,14 @@ contract SharedTaxiBusiness{
         }
         payDividendTime = now;
         totalExpenses = monthlyDriverPay + _fixedExpenses;
-        uint contractBalanceTemp = contractBalance-totalExpenses; //all expenses
-        if(contractBalanceTemp > 0){
+        contractBalance -= totalExpenses; //all expenses
+        uint payOfParticipantTemp = (contractBalance / numberOfParticipant); 
+        if(contractBalance > 0){
             for (uint i=0; i<numberOfParticipant; i++) {
-                balances[participantArray[i].addr] += (contractBalanceTemp / numberOfParticipant);
+                balances[participantArray[i].addr] += payOfParticipantTemp;
+                contractBalance -= payOfParticipantTemp;
             }
         }
-        
     }
     
     //Only participant can call this function and can see his/her balance
