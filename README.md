@@ -22,4 +22,4 @@ Additionally, about set manager, transfer and time processes:
 I defined extra functions such as isParticipantExist(), getBalance(),getCarInfo(), etc. for seeing what is going on at current stage. 
 They can be usefull for you too.
 
-Hope this helps, Sir. 
+Hope this helps, regards. 
